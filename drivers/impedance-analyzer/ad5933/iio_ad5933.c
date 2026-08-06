@@ -75,9 +75,29 @@ static enum ad5933_iio_attr_priv {
 	AD5933_ATTR_INCREMENTED_MEASUREMENT
 };
 
-static int32_t ad5933_pga_gain_available[] = {AD5933_GAIN_X5, AD5933_GAIN_X1};
-static int32_t ad5933_output_range_available[] = {AD5933_RANGE_2000mVpp, AD5933_RANGE_200mVpp, AD5933_RANGE_400mVpp, AD5933_RANGE_1000mVpp};
-static int32_t ad5933_settling_cycles_multiplier_available[] = {AD5933_SETTLING_X1, AD5933_SETTLING_X2, AD5933_SETTLING_X4};
+static char* ad5933_pga_gain_available[] = {
+	[AD5933_GAIN_X5] = "gain_5x",
+	[AD5933_GAIN_X1] = "gain_1x",
+};
+
+static char* ad5933_output_range_available[] = {
+	[AD5933_RANGE_2000mVpp] = "range_2000mvpp",
+	[AD5933_RANGE_200mVpp] = "range_200mvpp",
+	[AD5933_RANGE_400mVpp] = "range_400mvpp",
+	[AD5933_RANGE_1000mVpp] = "range_1000mvpp"
+};
+
+static char* ad5933_settling_cycles_multiplier_available[] = {
+	[AD5933_SETTLING_X1] = "settling_1x",
+	[AD5933_SETTLING_X2] = "settling_2x",
+	[AD5933_SETTLING_X4] = "settling_4x"
+};
+
+static char* ad5933_measure_mode_available[] = {
+	[AD5933_MEASURE_MODE_SINGLE] = "single",
+	[AD5933_MEASURE_MODE_SWEEP] = "sweep"
+};
+
 static int16_t ad5933_channel_data[1024];
 
 static int ad5933_iio_read_raw(void *dev, char *buf, uint32_t len,
@@ -379,6 +399,7 @@ static int ad5933_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 	struct ad5933_iio_dev *iio_ad5933;
 	struct ad5933_dev *ad5933;
 	int32_t val;
+	int length = 0;
 	int ret;
 
 	if (!dev)
@@ -390,15 +411,26 @@ static int ad5933_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 	switch (priv) {
 	case AD5933_ATTR_PGA_GAIN:
 		val = ad5933->pga_gain;
-		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
+		return snprintf(buf, len, "%s", ad5933_pga_gain_available[val]);
 	case AD5933_ATTR_PGA_GAIN_AVAILABLE:
-		return iio_format_value(buf, len, IIO_VAL_INT_MULTIPLE, 2,
-					ad5933_pga_gain_available);
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_pga_gain_available); i++){
+			ret = snprintf(buf + length, len - length, "%s ", ad5933_pga_gain_available[i]);
+			if (ret < 0 || ret >= (int)(len - length))
+				return -ENOMEM;
+			length += ret;
+		}
+		return length;
 	case AD5933_ATTR_OUTPUT_RANGE:
 		val = ad5933->output_range;
-		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
+		return snprintf(buf, len, "%s", ad5933_output_range_available[val]);
 	case AD5933_ATTR_OUTPUT_RANGE_AVAILABLE:
-		return sprintf(buf, "0=2Vpp, 1=200mVpp, 2=400mVpp, 3=1Vpp");
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_output_range_available); i++){
+			ret = snprintf(buf + length, len - length, "%s ", ad5933_output_range_available[i]);
+			if (ret < 0 || ret >= (int)(len - length))
+				return -ENOMEM;
+			length += ret;
+		}
+		return length;
 	case AD5933_ATTR_START_FREQ:
 		val = ad5933->start_freq;
 		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
@@ -413,9 +445,17 @@ static int ad5933_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 	case AD5933_ATTR_SETTLING_CYCLES_MULTIPLIER:
 		val = ad5933->settling_cycle_multiplier;
-		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
+		return snprintf(buf, len, "%s", ad5933_settling_cycles_multiplier_available[val]);
 	case AD5933_ATTR_SETTLING_CYCLES_MULTIPLIER_AVAILABLE:
-		return sprintf(buf, "0=1X, 1=2X, 3=4X");
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_settling_cycles_multiplier_available); i++){
+			if (i == 2)
+				continue;  // Skip the missing enum index 2
+			ret = snprintf(buf + length, len - length, "%s ", ad5933_settling_cycles_multiplier_available[i]);
+			if (ret < 0 || ret >= (int)(len - length))
+				return -ENOMEM;
+			length += ret;
+		}
+		return length;
 	case AD5933_ATTR_HEARTBEAT:
 		val = iio_ad5933->heartbeat;
 		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
@@ -427,18 +467,24 @@ static int ad5933_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 	case AD5933_ATTR_MEASURE_MODE:
 		val = iio_ad5933->measure_mode;
-		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
+		return snprintf(buf, len, "%s", ad5933_measure_mode_available[val]);
 	case AD5933_ATTR_MEASURE_MODE_AVAILABLE:
-		return sprintf(buf, "0=single, 1=sweep");
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_measure_mode_available); i++){
+			ret = snprintf(buf + length, len - length, "%s ", ad5933_measure_mode_available[i]);
+			if (ret < 0 || ret >= (int)(len - length))
+				return -ENOMEM;
+			length += ret;
+		}
+		return length;
 	case AD5933_ATTR_CURRENT_OUTPUT_FREQ:
 		val = ad5933->current_output_freq;
 		return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 	case AD5933_ATTR_REPEAT_MEASUREMENT:
 		val = ad5933->current_output_freq;
-		return sprintf(buf, "1=repeat measurement at current frequency");
+		return snprintf(buf, len, "1=repeat measurement at current frequency");
 	case AD5933_ATTR_INCREMENTED_MEASUREMENT:
 		val = ad5933->current_output_freq;
-		return sprintf(buf, "1=measure after incrementing frequency to next point in sweep");
+		return snprintf(buf, len, "1=measure after incrementing frequency to next point in sweep");
 	default:
 		return -EINVAL;
 	}
@@ -469,15 +515,25 @@ static int ad5933_iio_write_dev_attr(void *dev, char *buf, uint32_t len,
 
 	switch (priv) {
 	case AD5933_ATTR_PGA_GAIN:
-		ret = ad5933_set_gain(ad5933, val);
-		if (ret)
-			return ret;
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_pga_gain_available); i++) {
+			if (!strcmp(buf, ad5933_pga_gain_available[i])) {
+				ret = ad5933_set_gain(ad5933, i);
+				if (ret)
+					return ret;
+				break;
+			}
+		}
 		break;
 	case AD5933_ATTR_OUTPUT_RANGE:
-		ret = ad5933_set_range(ad5933, val);
-		if (ret)
-			return ret;
-		break;
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_output_range_available); i++) {
+			if (!strcmp(buf, ad5933_output_range_available[i])) {
+				ret = ad5933_set_range(ad5933, i);
+				if (ret)
+					return ret;
+				return len;
+			}
+		}
+		return -EINVAL;
 	case AD5933_ATTR_START_FREQ:
 		ret = ad5933_config_sweep(ad5933, val,
 					  ad5933->freq_increment,
@@ -507,12 +563,20 @@ static int ad5933_iio_write_dev_attr(void *dev, char *buf, uint32_t len,
 			return ret;
 		break;
 	case AD5933_ATTR_SETTLING_CYCLES_MULTIPLIER:
-		ret = ad5933_set_settling_time(ad5933,
-					       val,
-					       ad5933->settling_cycles);
-		if (ret)
-			return ret;
-		break;
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_settling_cycles_multiplier_available); i++) {
+			if (i == 2)
+				continue; // Skip the missing enum index 2
+
+			if (!strcmp(buf, ad5933_settling_cycles_multiplier_available[i])) {
+				ret = ad5933_set_settling_time(ad5933,
+							       i,
+							       ad5933->settling_cycles);
+				if (ret)
+					return ret;
+				return len;
+			}
+		}
+		return -EINVAL;
 	case AD5933_ATTR_SWEEP_INITIALIZED:
 		if (val == 1) {
 			ret = ad5933_initialize_sweep(ad5933);
@@ -530,12 +594,13 @@ static int ad5933_iio_write_dev_attr(void *dev, char *buf, uint32_t len,
 		}
 		break;
 	case AD5933_ATTR_MEASURE_MODE:
-		if (val == AD5933_MEASURE_MODE_SINGLE || val == AD5933_MEASURE_MODE_SWEEP) {
-			iio_ad5933->measure_mode = val;
-		} else {
-			return -EINVAL;
+		for (int i = 0; i < NO_OS_ARRAY_SIZE(ad5933_measure_mode_available); i++) {
+			if (!strcmp(buf, ad5933_measure_mode_available[i])) {
+				iio_ad5933->measure_mode = i;
+				return len;
+			}
 		}
-		break;
+		return -EINVAL;
 	case AD5933_ATTR_REPEAT_MEASUREMENT:
 		ret = ad5933_repeat_freq(ad5933);
 		if (ret)
@@ -631,7 +696,7 @@ static int ad5933_iio_submit(struct iio_device_data *dev_data)
 }
 
 /**
- * @brief advance the non-blocking sweep by one point.
+ * @brief Advance the non-blocking sweep by one point.
  *
  * Registered by the project as iio_app post_step_callback and invoked on every
  * iiod loop iteration.

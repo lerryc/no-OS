@@ -118,7 +118,8 @@ enum ad5933_settling_cycle_multiplier {
 #define AD5933_INTERNAL_SYS_CLK     16776000ul      // 16.776 MHz
 #define AD5933_MAX_INC_NUM          511             // Maximum increment number
 #define AD5933_MAX_RETRIES          100             // Maximum number of retries for waiting for a status bit to be set
-
+#define AD5933_MAX_OUTPUT_FREQ      1000000   		// 100 kHz
+#define AD5933_MIN_OUTPUT_FREQ      0.1   			// 0.1 Hz
 
 struct ad5933_dev {
 	/* I2C */

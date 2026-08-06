@@ -428,14 +428,19 @@ int ad5933_config_sweep(struct ad5933_dev *dev,
 	if (!dev)
 		return -EINVAL;
 
-	/* Clamp the number of increments to the 9-bit maximum. */
-	if (num_increments > AD5933_MAX_INC_NUM)
-		inc_num_reg = AD5933_MAX_INC_NUM;
-	else
-		inc_num_reg = num_increments;
+	if (num_increments < 0 || num_increments > AD5933_MAX_INC_NUM)
+		return -EINVAL;
+
+	inc_num_reg = num_increments;
+
+	if (start_freq < AD5933_MIN_OUTPUT_FREQ || start_freq > AD5933_MAX_OUTPUT_FREQ)
+		return -EINVAL;
 
 	/* Convert start frequency to binary code. */
 	start_freq_reg = ad5933_convert_freq_to_reg(dev, start_freq);
+
+	if (inc_freq < AD5933_MIN_OUTPUT_FREQ || inc_freq > AD5933_MAX_OUTPUT_FREQ)
+		return -EINVAL;
 
 	/* Convert increment frequency to binary code. */
 	inc_freq_reg = ad5933_convert_freq_to_reg(dev, inc_freq);
@@ -964,7 +969,7 @@ int ad5933_standby(struct ad5933_dev *dev)
  * @param dev - The device structure.
  * @param frequency - The frequency value in Hz.
  *
- * @return 0 in case of success, negative error code otherwise.
+ * @return Binary code to write into the corresponding register.
 *******************************************************************************/
 uint32_t ad5933_convert_freq_to_reg(struct ad5933_dev *dev, uint32_t frequency)
 {
