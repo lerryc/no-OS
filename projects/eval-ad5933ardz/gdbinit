@@ -1,0 +1,6 @@
+target remote localhost:50000
+load /home/lerryc/projects/sdp/no-OS/build/eval-ad5933ardz.elf
+file /home/lerryc/projects/sdp/no-OS/build/eval-ad5933ardz.elf
+monitor reset halt
+tb main
+c
