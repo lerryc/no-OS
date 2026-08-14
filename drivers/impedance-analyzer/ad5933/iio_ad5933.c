@@ -41,6 +41,7 @@
 #include "no_os_util.h"
 #include <string.h>
 
+#define SWEEP_BLOCKING 1
 
 /* Temperature scale is 1/32 degC/LSB = 0.031250. */
 #define AD5933_TEMP_SCALE_INT		0
@@ -63,12 +64,12 @@ static enum ad5933_iio_attr_priv {
 	AD5933_ATTR_FREQ_INCREMENT,
 	AD5933_ATTR_FREQ_POINTS,
 	AD5933_ATTR_SETTLING_CYCLES,
-	AD5933_ATTR_HEARTBEAT,
 	AD5933_ATTR_SWEEP_INITIALIZED,
 	AD5933_ATTR_SWEEP_STARTED,
 	AD5933_ATTR_CURRENT_OUTPUT_FREQ,
 	AD5933_ATTR_REPEAT_MEASUREMENT,
-	AD5933_ATTR_INCREMENTED_MEASUREMENT
+	AD5933_ATTR_INCREMENTED_MEASUREMENT,
+	AD5933_ATTR_HEARTBEAT,
 };
 
 static char* ad5933_pga_gain_available[] = {
@@ -176,11 +177,6 @@ static struct iio_attribute ad5933_iio_debug_attrs[] = {
 		.priv = AD5933_ATTR_CURRENT_OUTPUT_FREQ,
 	},
 	{
-		.name = "heartbeat",
-		.show = ad5933_iio_read_dev_attr,
-		.priv = AD5933_ATTR_HEARTBEAT,
-	},
-	{
 		.name = "repeat_measurement",
 		.store = ad5933_iio_write_dev_attr,
 		.show = ad5933_iio_read_dev_attr,
@@ -191,6 +187,11 @@ static struct iio_attribute ad5933_iio_debug_attrs[] = {
 		.store = ad5933_iio_write_dev_attr,
 		.show = ad5933_iio_read_dev_attr,
 		.priv = AD5933_ATTR_INCREMENTED_MEASUREMENT,
+	},
+	{
+		.name = "heartbeat",
+		.show = ad5933_iio_read_dev_attr,
+		.priv = AD5933_ATTR_HEARTBEAT,
 	},
 	END_ATTRIBUTES_ARRAY
 };
@@ -402,9 +403,6 @@ static int ad5933_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 		case AD5933_ATTR_SETTLING_CYCLES:
 			val = ad5933->settling_cycles;
 			return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
-		case AD5933_ATTR_HEARTBEAT:
-			val = iio_ad5933->heartbeat;
-			return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 		case AD5933_ATTR_SWEEP_INITIALIZED:
 			val = iio_ad5933->state == AD5933_FUNCTION_INIT_START_FREQ;
 			return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
@@ -417,6 +415,9 @@ static int ad5933_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 		case AD5933_ATTR_REPEAT_MEASUREMENT:
 		case AD5933_ATTR_INCREMENTED_MEASUREMENT:
 			val = ad5933->current_output_freq;
+			return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
+		case AD5933_ATTR_HEARTBEAT:
+			val = iio_ad5933->heartbeat;
 			return iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 		default:
 			return -EINVAL;
@@ -561,19 +562,27 @@ static int ad5933_iio_pre_enable(void *dev, uint32_t mask)
 	iio_ad5933->active_channels = mask;
 	iio_ad5933->no_of_active_channels = no_os_hweight32(mask);
 
+	#ifndef SWEEP_BLOCKING
+
 	if (iio_ad5933->state == AD5933_FUNCTION_START_SWEEP) // There is an on-going sweep
 		return 0;
 
+	#endif
+	
 	ret = ad5933_initialize_sweep(iio_ad5933->ad5933_dev);
 
 	if (ret)
 		return ret;
 	
-	// memset(iio_ad5933->channel_data, 0, sizeof(iio_ad5933->channel_data));
-	
-	iio_ad5933->state = AD5933_FUNCTION_INIT_START_FREQ;
+	memset(iio_ad5933->channel_data, 0, sizeof(iio_ad5933->channel_data));
 
 	no_os_mdelay(100);
+
+	ret = ad5933_start_sweep(iio_ad5933->ad5933_dev);
+		if (ret)
+			return 0;
+		
+	iio_ad5933->state = AD5933_FUNCTION_START_SWEEP;
 
 	return 0;
 }
@@ -581,8 +590,16 @@ static int ad5933_iio_pre_enable(void *dev, uint32_t mask)
 static int ad5933_iio_post_disable(void *dev)
 {
 	struct ad5933_iio_dev *iio_ad5933 = dev;
-	return 0;
+
+	#ifdef SWEEP_BLOCKING
+
 	return ad5933_power_down(iio_ad5933->ad5933_dev);	
+
+	#else
+	
+	return 0;
+
+	#endif
 }
 
 /**
@@ -602,14 +619,28 @@ static int ad5933_iio_submit(struct iio_device_data *dev_data)
 	uint32_t i;
 	int16_t scan[3];
 	int16_t real, imag;
+	uint8_t status;
 	int ret;
 
 	if (!dev_data)
 		return -EINVAL;
-
+		
 	iio_ad5933 = dev_data->dev;
 	ad5933 = iio_ad5933->ad5933_dev;
 	buffer = dev_data->buffer;
+
+	#ifdef SWEEP_BLOCKING
+
+	for (i = 0; i <= ad5933->num_increments; i++){
+		ret = ad5933_wait_status(ad5933, AD5933_STAT_DATA_VALID, &status);
+		if (ret)
+			continue;
+
+		ad5933_get_current_data(iio_ad5933->ad5933_dev, &iio_ad5933->channel_data[iio_ad5933->ad5933_dev->sweep_point * 2], &iio_ad5933->channel_data[iio_ad5933->ad5933_dev->sweep_point * 2 + 1]);
+		ad5933_increment_freq(ad5933);
+	}
+
+	#endif
 
 	mask = buffer->active_mask;
 	points = buffer->samples;
@@ -619,13 +650,21 @@ static int ad5933_iio_submit(struct iio_device_data *dev_data)
 		uint8_t k = 0;
 
 		if (mask & NO_OS_BIT(AD5933_CH_REAL))
-			scan[k++] = i < max_samples ? iio_ad5933->channel_data[i * 2] : 0;
+			scan[k++] = i < max_samples ? iio_ad5933->channel_data[i * 2] : INT16_MAX;
 		if (mask & NO_OS_BIT(AD5933_CH_IMAG))
-			scan[k++] = i < max_samples ? iio_ad5933->channel_data[i * 2 + 1] : 0;
+			scan[k++] = i < max_samples ? iio_ad5933->channel_data[i * 2 + 1] : INT16_MAX;
 		ret = iio_buffer_push_scan(buffer, scan);
 		if (ret)
 			return ret;
 	}
+
+	#ifndef SWEEP_BLOCKING
+
+	ret = ad5933_sweep_done(ad5933, AD5933_STAT_SWEEP_DONE, &status);
+	if (!status)
+		return -EBUSY;
+
+	#endif
 
 	return 0;
 }
@@ -641,6 +680,8 @@ static int ad5933_iio_submit(struct iio_device_data *dev_data)
  */
 int ad5933_iio_sweep_step(void *arg)
 {
+	return 0;
+
 	struct ad5933_iio_dev *iio_ad5933 = arg;
 	struct ad5933_dev *ad5933;
 	uint8_t status;
@@ -676,12 +717,6 @@ int ad5933_iio_sweep_step(void *arg)
 		iio_ad5933->state = AD5933_FUNCTION_POWER_DOWN;
 	} else {
 		ad5933_increment_freq(ad5933);
-	}
-
-	iio_ad5933->heartbeat++;
-
-	if(iio_ad5933->heartbeat > 1000) {
-		iio_ad5933->heartbeat = 1;
 	}
 
 	return 0;
