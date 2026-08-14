@@ -120,7 +120,7 @@ enum ad5933_settling_cycle_multiplier {
 #define AD5933_MAX_RETRIES          100             // Maximum number of retries for waiting for a status bit to be set
 #define AD5933_POWERUP_RETRIES      300             // Retries for the power-up I2C probe (cold-start supply ramp)
 #define AD5933_POWERUP_RETRY_MS     10              // Delay between power-up probe attempts, in milliseconds
-#define AD5933_MAX_OUTPUT_FREQ      1000000   		// 100 kHz
+#define AD5933_MAX_OUTPUT_FREQ      100000   		// 100 kHz
 #define AD5933_MIN_OUTPUT_FREQ      0.1   			// 0.1 Hz
 
 struct ad5933_dev {

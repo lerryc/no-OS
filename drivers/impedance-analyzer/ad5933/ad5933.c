@@ -304,6 +304,9 @@ int ad5933_set_system_clk(struct ad5933_dev *dev,
 	if (!dev)
 		return -EINVAL;
 
+	if (ext_clk_freq <= 0)
+		return -EINVAL;
+
 	ret = ad5933_reg_write(dev, AD5933_REG_CONTROL_LB,
 			       (uint8_t)clk_source);
 	if (ret)
@@ -427,16 +430,20 @@ int ad5933_config_sweep(struct ad5933_dev *dev,
 {
 	uint32_t start_freq_reg = 0;
 	uint32_t inc_freq_reg = 0;
-	uint16_t inc_num_reg = 0;
+	uint32_t end_freq;
 	int ret;
 
 	if (!dev)
 		return -EINVAL;
 
+	end_freq = start_freq + inc_freq * num_increments;
+
+	if (end_freq > AD5933_MAX_OUTPUT_FREQ)
+		return -EINVAL;
+
 	if (num_increments < 0 || num_increments > AD5933_MAX_INC_NUM)
 		return -EINVAL;
 
-	inc_num_reg = num_increments;
 
 	if (start_freq < AD5933_MIN_OUTPUT_FREQ || start_freq > AD5933_MAX_OUTPUT_FREQ)
 		return -EINVAL;
@@ -444,11 +451,17 @@ int ad5933_config_sweep(struct ad5933_dev *dev,
 	/* Convert start frequency to binary code. */
 	start_freq_reg = ad5933_convert_freq_to_reg(dev, start_freq);
 
+	if (!start_freq_reg)
+		return -EINVAL;
+
 	if (inc_freq < AD5933_MIN_OUTPUT_FREQ || inc_freq > AD5933_MAX_OUTPUT_FREQ)
 		return -EINVAL;
 
 	/* Convert increment frequency to binary code. */
 	inc_freq_reg = ad5933_convert_freq_to_reg(dev, inc_freq);
+
+	if (!inc_freq_reg)
+		return -EINVAL;
 
 	ret = ad5933_set_register_value(dev,
 					AD5933_REG_FREQ_START,
@@ -466,14 +479,14 @@ int ad5933_config_sweep(struct ad5933_dev *dev,
 
 	ret = ad5933_set_register_value(dev,
 					AD5933_REG_INC_NUM,
-					inc_num_reg,
+					(uint32_t) num_increments,
 					2);
 	if (ret)
 		return ret;
 
 	dev->start_freq = start_freq;
 	dev->freq_increment = inc_freq;
-	dev->num_increments = inc_num_reg;
+	dev->num_increments = num_increments;
 	dev->sweep_point = 0;
 	dev->current_output_freq = start_freq;
 
@@ -878,9 +891,18 @@ int ad5933_start_sweep(struct ad5933_dev *dev)
 int ad5933_increment_freq(struct ad5933_dev *dev)
 {
 	int ret;
+	int32_t sweep_done;
 
 	if (!dev)
 		return -EINVAL;
+
+	ret = ad5933_sweep_done(dev, &sweep_done);
+
+	if (ret)
+		return ret;
+	
+	if (sweep_done)
+		return -ECANCELED;
 
 	ret = ad5933_reg_write(dev, AD5933_REG_CONTROL_HB,
 			       AD5933_CONTROL_FUNCTION(AD5933_FUNCTION_INC_FREQ) |
